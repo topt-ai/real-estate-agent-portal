@@ -1,13 +1,14 @@
 export interface Property {
   id: string;
-  title: string;
-  price: number;
-  location: string;
-  description: string;
-  bedrooms: number;
-  bathrooms: number;
-  area: number;
+  titulo: string;
+  precio: string;
+  ubicacion: string;
+  descripcion: string;
+  habitaciones: string;
+  banos: string;
+  metros: string;
+  fotos: string[];
   whatsapp: string;
-  photos: string[];
-  isActive: boolean;
+  activo: boolean;
+  tipo: 'venta' | 'alquiler';
 }

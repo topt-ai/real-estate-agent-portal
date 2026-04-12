@@ -2,55 +2,54 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Edit2, Trash2, Image as ImageIcon } from 'lucide-react';
 import { Property } from '@/types';
+import { fetchListings, updateProperty, deleteProperty } from '@/lib/api';
+import { useUser } from '@clerk/clerk-react';
 
 export default function Dashboard() {
   const [properties, setProperties] = useState<Property[]>([]);
+  const { user } = useUser();
+  const sheetId = user?.publicMetadata?.sheetId as string;
 
-  useEffect(() => {
-    // TODO: Sheets API fetch
-    // Mock data for now
-    setProperties([
-      {
-        id: '1',
-        title: 'Casa Moderna en San Benito',
-        price: 350000,
-        location: 'San Benito, San Salvador',
-        description: 'Hermosa casa con acabados modernos...',
-        bedrooms: 3,
-        bathrooms: 3.5,
-        area: 250,
-        whatsapp: '50370000000',
-        photos: ['https://picsum.photos/seed/house1/200/200'],
-        isActive: true,
-      },
-      {
-        id: '2',
-        title: 'Apartamento con Vista',
-        price: 180000,
-        location: 'Escalón, San Salvador',
-        description: 'Apartamento en nivel alto...',
-        bedrooms: 2,
-        bathrooms: 2,
-        area: 120,
-        whatsapp: '50370000000',
-        photos: [],
-        isActive: false,
-      }
-    ]);
-  }, []);
-
-  const toggleStatus = (id: string) => {
-    // TODO: Sheets API update status
-    setProperties(properties.map(p => 
-      p.id === id ? { ...p, isActive: !p.isActive } : p
-    ));
+  const loadProperties = async () => {
+    if (sheetId) {
+      const data = await fetchListings(sheetId);
+      setProperties(data);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    // Note: In a real app we'd use a custom modal instead of window.confirm
-    // but for the sake of the prototype, we'll just delete it directly or use a simple state.
-    // TODO: Sheets API delete
-    setProperties(properties.filter(p => p.id !== id));
+  useEffect(() => {
+    loadProperties();
+  }, [sheetId]);
+
+  const toggleStatus = async (id: string, index: number) => {
+    const property = properties.find(p => p.id === id);
+    if (!property) return;
+    
+    const newStatus = !property.activo;
+    
+    // Optimistic update
+    setProperties(properties.map(p => 
+      p.id === id ? { ...p, activo: newStatus } : p
+    ));
+
+    const success = await updateProperty(index + 2, { activo: newStatus });
+    if (!success) {
+      // Revert if failed
+      setProperties(properties.map(p => 
+        p.id === id ? { ...p, activo: !newStatus } : p
+      ));
+    }
+  };
+
+  const handleDelete = async (id: string, index: number) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar esta propiedad?')) return;
+
+    const success = await deleteProperty(index + 2);
+    if (success) {
+      setProperties(properties.filter(p => p.id !== id));
+    } else {
+      alert('Error eliminando propiedad');
+    }
   };
 
   return (
@@ -79,13 +78,13 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {properties.map((property) => (
+              {properties.map((property, index) => (
                 <tr key={property.id} className="hover:bg-gray-50 transition-colors">
                   <td className="p-4">
-                    {property.photos.length > 0 ? (
+                    {property.fotos && property.fotos.length > 0 ? (
                       <img 
-                        src={property.photos[0]} 
-                        alt={property.title} 
+                        src={property.fotos[0]} 
+                        alt={property.titulo} 
                         className="w-16 h-16 object-cover rounded-lg"
                         referrerPolicy="no-referrer"
                       />
@@ -95,21 +94,21 @@ export default function Dashboard() {
                       </div>
                     )}
                   </td>
-                  <td className="p-4 font-medium text-brand-primary">{property.title}</td>
+                  <td className="p-4 font-medium text-brand-primary">{property.titulo}</td>
                   <td className="p-4 text-gray-600">
-                    ${property.price.toLocaleString()}
+                    ${Number(property.precio || 0).toLocaleString()}
                   </td>
-                  <td className="p-4 text-gray-600">{property.location}</td>
+                  <td className="p-4 text-gray-600">{property.ubicacion}</td>
                   <td className="p-4">
                     <button
-                      onClick={() => toggleStatus(property.id)}
+                      onClick={() => toggleStatus(property.id, index)}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                        property.isActive ? 'bg-brand-accent' : 'bg-gray-300'
+                        property.activo ? 'bg-brand-accent' : 'bg-gray-300'
                       }`}
                     >
                       <span
                         className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          property.isActive ? 'translate-x-6' : 'translate-x-1'
+                          property.activo ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
                     </button>
@@ -118,13 +117,14 @@ export default function Dashboard() {
                     <div className="flex items-center justify-end gap-2">
                       <Link
                         to={`/editar/${property.id}`}
+                        state={{ rowIndex: index + 2 }}
                         className="p-2 text-gray-400 hover:text-brand-accent transition-colors"
                         title="Editar"
                       >
                         <Edit2 size={18} />
                       </Link>
                       <button
-                        onClick={() => handleDelete(property.id)}
+                        onClick={() => handleDelete(property.id, index)}
                         className="p-2 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
                         title="Eliminar"
                       >
