@@ -32,7 +32,7 @@ export default function Dashboard() {
       p.id === id ? { ...p, activo: newStatus } : p
     ));
 
-    const success = await updateProperty(index + 2, { activo: newStatus });
+    const success = await updateProperty(index + 2, { activo: newStatus }, sheetId);
     if (!success) {
       // Revert if failed
       setProperties(properties.map(p => 
@@ -44,7 +44,7 @@ export default function Dashboard() {
   const handleDelete = async (id: string, index: number) => {
     if (!window.confirm('¿Estás seguro de que deseas eliminar esta propiedad?')) return;
 
-    const success = await deleteProperty(index + 2);
+    const success = await deleteProperty(index + 2, sheetId);
     if (success) {
       setProperties(properties.filter(p => p.id !== id));
     } else {

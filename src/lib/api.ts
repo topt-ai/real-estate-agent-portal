@@ -47,56 +47,90 @@ export async function fetchListings(sheetId: string): Promise<Property[]> {
   }
 }
 
-const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL;
+const WEBHOOK_URL = import.meta.env.VITE_DEV_MODE === "true"
+  ? import.meta.env.VITE_N8N_WEBHOOK_URL_TEST
+  : import.meta.env.VITE_N8N_WEBHOOK_URL;
 
-export async function addProperty(data: any): Promise<boolean> {
-  if (!APPS_SCRIPT_URL) return false;
+export async function addProperty(data: any, sheetId: string): Promise<boolean> {
+  if (!WEBHOOK_URL || !sheetId) return false;
   try {
-    const response = await fetch(APPS_SCRIPT_URL, {
+    data.id = Date.now().toString();
+    
+    // Ensure all data fields are in correct order and format
+    const formattedData = {
+      id: data.id,
+      titulo: data.titulo || '',
+      precio: data.precio || '',
+      ubicacion: data.ubicacion || '',
+      descripcion: data.descripcion || '',
+      habitaciones: data.habitaciones || '',
+      banos: data.banos || '',
+      metros: data.metros || '',
+      fotos: data.fotos || '',
+      whatsapp: data.whatsapp || '',
+      activo: data.activo === true || data.activo === 'true' || data.activo === 'Activo',
+      tipo: data.tipo || 'venta'
+    };
+
+    console.log('Sending addProperty request to:', WEBHOOK_URL, 'with data:', JSON.stringify({ action: "add", sheetId, data: formattedData }));
+    await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ action: "add", data })
+      body: JSON.stringify({ action: "add", sheetId, data: formattedData })
     });
-    const result = await response.json();
-    return result.success;
+    console.log('Successfully completed addProperty fetch call');
+    return true;
   } catch (error) {
     console.error('Error adding property:', error);
     return false;
   }
 }
 
-export async function updateProperty(rowIndex: number, data: any): Promise<boolean> {
-  if (!APPS_SCRIPT_URL) return false;
+export async function updateProperty(rowIndex: number, data: any, sheetId: string): Promise<boolean> {
+  if (!WEBHOOK_URL || !sheetId) return false;
   try {
-    const response = await fetch(APPS_SCRIPT_URL, {
+    const formattedData = {
+      id: data.id,
+      titulo: data.titulo || '',
+      precio: data.precio || '',
+      ubicacion: data.ubicacion || '',
+      descripcion: data.descripcion || '',
+      habitaciones: data.habitaciones || '',
+      banos: data.banos || '',
+      metros: data.metros || '',
+      fotos: data.fotos || '',
+      whatsapp: data.whatsapp || '',
+      activo: data.activo === true || data.activo === 'true' || data.activo === 'Activo',
+      tipo: data.tipo || 'venta'
+    };
+
+    await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ action: "update", rowIndex, data })
+      body: JSON.stringify({ action: "update", sheetId, rowIndex, data: formattedData })
     });
-    const result = await response.json();
-    return result.success;
+    return true;
   } catch (error) {
     console.error('Error updating property:', error);
     return false;
   }
 }
 
-export async function deleteProperty(rowIndex: number): Promise<boolean> {
-  if (!APPS_SCRIPT_URL) return false;
+export async function deleteProperty(rowIndex: number, sheetId: string): Promise<boolean> {
+  if (!WEBHOOK_URL || !sheetId) return false;
   try {
-    const response = await fetch(APPS_SCRIPT_URL, {
+    await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ action: "delete", rowIndex })
+      body: JSON.stringify({ action: "delete", sheetId, rowIndex })
     });
-    const result = await response.json();
-    return result.success;
+    return true;
   } catch (error) {
     console.error('Error deleting property:', error);
     return false;

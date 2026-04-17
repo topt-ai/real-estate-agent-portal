@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UploadCloud, X, Loader2 } from 'lucide-react';
 import { Property } from '@/types';
 import { addProperty, updateProperty } from '@/lib/api';
+import { useUser } from '@clerk/clerk-react';
 
 interface PropertyFormProps {
   initialData?: Partial<Property>;
@@ -11,6 +12,8 @@ interface PropertyFormProps {
 }
 
 export default function PropertyForm({ initialData, isEditing, rowIndex }: PropertyFormProps) {
+  const { user } = useUser();
+  const sheetId = user?.publicMetadata?.sheetId as string;
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,38 +47,51 @@ export default function PropertyForm({ initialData, isEditing, rowIndex }: Prope
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    console.log("Submit triggered, passed validation");
     
-    // Formatting data array corresponding to Google Sheet columns
-    // Columns: id, titulo, precio, ubicacion, descripcion, habitaciones, baños, metros, fotos, whatsapp, activo, tipo
-    const dataObj = {
-      id: formData.id || crypto.randomUUID(),
-      titulo: formData.titulo || '',
-      precio: formData.precio || '',
-      ubicacion: formData.ubicacion || '',
-      descripcion: formData.descripcion || '',
-      habitaciones: formData.habitaciones || '',
-      banos: formData.banos || '',
-      metros: formData.metros || '',
-      fotos: formData.fotos?.join(',') || '',
-      whatsapp: formData.whatsapp || '',
-      activo: formData.activo ? 'Activo' : 'Inactivo',
-      tipo: formData.tipo || 'venta'
-    };
+    try {
+      setIsSubmitting(true);
+      
+      // Formatting data array corresponding to Google Sheet columns
+      // Columns: id, titulo, precio, ubicacion, descripcion, habitaciones, baños, metros, fotos, whatsapp, activo, tipo
+      const dataObj = {
+        id: formData.id || crypto.randomUUID(),
+        titulo: formData.titulo || '',
+        precio: formData.precio || '',
+        ubicacion: formData.ubicacion || '',
+        descripcion: formData.descripcion || '',
+        habitaciones: formData.habitaciones || '',
+        banos: formData.banos || '',
+        metros: formData.metros || '',
+        fotos: formData.fotos?.join(',') || '',
+        whatsapp: formData.whatsapp || '',
+        activo: formData.activo ? 'Activo' : 'Inactivo',
+        tipo: formData.tipo || 'venta'
+      };
 
-    let success = false;
-    if (isEditing && rowIndex !== undefined) {
-      success = await updateProperty(rowIndex, dataObj);
-    } else {
-      success = await addProperty(dataObj);
-    }
+      console.log('Sending Property Data:', dataObj);
 
-    setIsSubmitting(false);
+      let success = false;
+      if (isEditing && rowIndex !== undefined) {
+        success = await updateProperty(rowIndex, dataObj, sheetId);
+      } else {
+        success = await addProperty(dataObj, sheetId);
+      }
 
-    if (success) {
-      navigate('/dashboard');
-    } else {
-      alert('Error guardando la propiedad. Por favor, intenta de nuevo.');
+      console.log('API completion success:', success);
+
+      if (success) {
+        // Adding a slight delay before redirect to give Google Sheets a moment to execute
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        navigate('/dashboard');
+      } else {
+        alert('Error guardando la propiedad. Por favor, intenta de nuevo.');
+      }
+    } catch (error: any) {
+      console.error('Submit error:', error);
+      alert('Ocurrió un error: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
