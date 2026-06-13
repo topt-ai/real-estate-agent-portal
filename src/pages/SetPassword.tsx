@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { translateAuthError } from '@/lib/authErrors';
 
-type Phase = 'checking' | 'ready' | 'invalid';
+type Phase = 'checking' | 'ready' | 'invalid' | 'success';
+
+const VALID_TYPES = new Set(['invite', 'recovery', 'signup', 'email_change']);
 
 export default function SetPassword() {
   const navigate = useNavigate();
@@ -13,7 +16,6 @@ export default function SetPassword() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
 
@@ -25,37 +27,47 @@ export default function SetPassword() {
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
       const type = params.get('type');
+      const hashError = params.get('error_description') || params.get('error');
 
-      // detectSessionInUrl in the supabase client will have already
-      // parsed the hash and set the session. We still inspect it here to
-      // (a) confirm we're in an invite/recovery flow and (b) fall back to
-      // an explicit setSession call if needed.
-      if (accessToken && (type === 'invite' || type === 'recovery' || type === 'signup')) {
+      if (hashError) {
+        if (!cancelled) {
+          setError(translateAuthError(hashError));
+          setPhase('invalid');
+        }
+        return;
+      }
+
+      if (accessToken && type && VALID_TYPES.has(type)) {
         if (refreshToken) {
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
           });
           if (error) {
-            if (!cancelled) setPhase('invalid');
+            if (!cancelled) {
+              setError(translateAuthError(error.message));
+              setPhase('invalid');
+            }
             return;
           }
         }
         if (!cancelled) {
           setPhase('ready');
-          // Clean the token out of the URL.
           window.history.replaceState(null, '', window.location.pathname);
         }
         return;
       }
 
-      // No token in URL — check if we already have a session from a
-      // previous redirect, otherwise bounce to /login.
+      // No token in URL — either already authenticated (came from a
+      // password reset link that's already been consumed, or arrived
+      // here while logged in) or nothing to do.
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
       if (data.session) {
-        setPhase('ready');
+        // Already logged in with no token → straight to dashboard.
+        navigate('/dashboard', { replace: true });
       } else {
+        // No token and no session → bounce to login.
         navigate('/login', { replace: true });
       }
     };
@@ -81,10 +93,11 @@ export default function SetPassword() {
     const { error } = await supabase.auth.updateUser({ password });
     setSubmitting(false);
     if (error) {
-      setError(error.message);
+      setError(translateAuthError(error.message) || 'Error al guardar');
       return;
     }
-    navigate('/dashboard', { replace: true });
+    setPhase('success');
+    setTimeout(() => navigate('/dashboard', { replace: true }), 2000);
   };
 
   if (phase === 'checking') {
@@ -101,14 +114,26 @@ export default function SetPassword() {
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-8 space-y-4 text-center">
           <h1 className="text-xl font-bold text-brand-primary">Enlace inválido</h1>
           <p className="text-sm text-gray-600">
-            El enlace de invitación expiró o ya fue usado. Por favor solicita uno nuevo.
+            {error || 'El enlace expiró o ya fue usado. Por favor solicita uno nuevo.'}
           </p>
           <button
             onClick={() => navigate('/login', { replace: true })}
             className="w-full px-4 py-3 bg-brand-accent hover:bg-brand-accent-hover text-white font-medium rounded-xl transition-colors cursor-pointer"
           >
-            Ir al inicio de sesión
+            Volver al inicio de sesión
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'success') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4">
+        <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-8 space-y-4 text-center">
+          <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
+          <h1 className="text-xl font-bold text-brand-primary">Contraseña guardada</h1>
+          <p className="text-sm text-gray-600">Redirigiendo a tu panel...</p>
         </div>
       </div>
     );
