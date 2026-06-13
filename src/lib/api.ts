@@ -1,138 +1,175 @@
+import { supabase } from './supabase';
 import { Property } from '../types';
 
-export async function fetchListings(sheetId: string): Promise<Property[]> {
-  if (!sheetId) return [];
+type ListingRow = {
+  id: string;
+  titulo: string;
+  precio: string;
+  ubicacion: string;
+  descripcion: string;
+  habitaciones: string;
+  banos: string;
+  metros: string;
+  whatsapp: string;
+  tipo: string;
+  status: string;
+  featured: boolean;
+  agent_id: string;
+  listing_images: { url: string; order_index: number }[];
+};
 
-  try {
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json`;
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const text = await response.text();
-    const data = JSON.parse(text.substring(47).slice(0, -2));
-    const rows = data.table.rows;
-    
-    const listings: Property[] = rows.map((row: any) => {
-      const c = row.c;
-      const activoVal = c[10]?.v;
-      const isActivo = activoVal === true || activoVal === 'TRUE' || activoVal === 'true' || activoVal === 'Activo' || activoVal === 1;
-      
-      const idStr = c[0]?.v?.toString() || '';
-      
-      if (!idStr) return null;
+function rowToProperty(row: ListingRow): Property {
+  const images = (row.listing_images ?? [])
+    .sort((a, b) => a.order_index - b.order_index)
+    .map((img) => img.url);
+  return {
+    id: row.id,
+    titulo: row.titulo,
+    precio: row.precio,
+    ubicacion: row.ubicacion,
+    descripcion: row.descripcion,
+    habitaciones: row.habitaciones,
+    banos: row.banos,
+    metros: row.metros,
+    whatsapp: row.whatsapp,
+    tipo: (row.tipo === 'alquiler' ? 'alquiler' : 'venta') as Property['tipo'],
+    status: (row.status as Property['status']) ?? 'publicado',
+    featured: row.featured ?? false,
+    fotos: images,
+    agent_id: row.agent_id,
+  };
+}
 
-      return {
-        id: idStr,
-        titulo: c[1]?.v?.toString() || '',
-        precio: c[2]?.v?.toString() || '',
-        ubicacion: c[3]?.v?.toString() || '',
-        descripcion: c[4]?.v?.toString() || '',
-        habitaciones: c[5]?.v?.toString() || '',
-        banos: c[6]?.v?.toString() || '',
-        metros: c[7]?.v?.toString() || '',
-        fotos: c[8]?.v?.toString().split(',').map((url: string) => url.trim()).filter(Boolean) || [],
-        whatsapp: c[9]?.v?.toString() || '',
-        activo: isActivo,
-        tipo: c[11]?.v?.toString()?.toLowerCase() === 'alquiler' ? 'alquiler' : 'venta',
-      };
-    }).filter(Boolean);
-    
-    return listings;
-  } catch (error) {
-    console.error('Error fetching from Google Sheets:', error);
+export async function fetchListings(agentId: string): Promise<Property[]> {
+  const { data, error } = await supabase
+    .from('listings')
+    .select('*, listing_images(url, order_index)')
+    .eq('agent_id', agentId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('fetchListings error:', error);
     return [];
   }
+  return (data as ListingRow[]).map(rowToProperty);
 }
 
-const WEBHOOK_URL = import.meta.env.VITE_DEV_MODE === "true"
-  ? import.meta.env.VITE_N8N_WEBHOOK_URL_TEST
-  : import.meta.env.VITE_N8N_WEBHOOK_URL;
+export async function addListing(
+  agentId: string,
+  data: Omit<Property, 'id' | 'agent_id' | 'fotos'>,
+  imageUrls: string[]
+): Promise<string | null> {
+  const { data: row, error } = await supabase
+    .from('listings')
+    .insert({
+      titulo: data.titulo,
+      precio: data.precio,
+      ubicacion: data.ubicacion,
+      descripcion: data.descripcion,
+      habitaciones: data.habitaciones,
+      banos: data.banos,
+      metros: data.metros,
+      whatsapp: data.whatsapp,
+      tipo: data.tipo,
+      status: data.status,
+      featured: data.featured,
+      agent_id: agentId,
+    })
+    .select('id')
+    .single();
 
-export async function addProperty(data: any, sheetId: string): Promise<boolean> {
-  if (!WEBHOOK_URL || !sheetId) return false;
-  try {
-    data.id = Date.now().toString();
-    
-    // Ensure all data fields are in correct order and format
-    const formattedData = {
-      id: data.id,
-      titulo: data.titulo || '',
-      precio: data.precio || '',
-      ubicacion: data.ubicacion || '',
-      descripcion: data.descripcion || '',
-      habitaciones: data.habitaciones || '',
-      banos: data.banos || '',
-      metros: data.metros || '',
-      fotos: data.fotos || '',
-      whatsapp: data.whatsapp || '',
-      activo: data.activo === true || data.activo === 'true' || data.activo === 'Activo',
-      tipo: data.tipo || 'venta'
-    };
-
-    console.log('Sending addProperty request to:', WEBHOOK_URL, 'with data:', JSON.stringify({ action: "add", sheetId, data: formattedData }));
-    await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action: "add", sheetId, data: formattedData })
-    });
-    console.log('Successfully completed addProperty fetch call');
-    return true;
-  } catch (error) {
-    console.error('Error adding property:', error);
-    return false;
+  if (error || !row) {
+    console.error('addListing error:', error);
+    return null;
   }
+
+  if (imageUrls.length > 0) {
+    await supabase.from('listing_images').insert(
+      imageUrls.map((url, i) => ({ listing_id: row.id, url, order_index: i }))
+    );
+  }
+
+  return row.id;
 }
 
-export async function updateProperty(rowIndex: number, data: any, sheetId: string): Promise<boolean> {
-  if (!WEBHOOK_URL || !sheetId) return false;
-  try {
-    const formattedData = {
-      id: data.id,
-      titulo: data.titulo || '',
-      precio: data.precio || '',
-      ubicacion: data.ubicacion || '',
-      descripcion: data.descripcion || '',
-      habitaciones: data.habitaciones || '',
-      banos: data.banos || '',
-      metros: data.metros || '',
-      fotos: data.fotos || '',
-      whatsapp: data.whatsapp || '',
-      activo: data.activo === true || data.activo === 'true' || data.activo === 'Activo',
-      tipo: data.tipo || 'venta'
-    };
+export async function updateListing(
+  listingId: string,
+  agentId: string,
+  data: Omit<Property, 'id' | 'agent_id' | 'fotos'>,
+  imageUrls: string[]
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('listings')
+    .update({
+      titulo: data.titulo,
+      precio: data.precio,
+      ubicacion: data.ubicacion,
+      descripcion: data.descripcion,
+      habitaciones: data.habitaciones,
+      banos: data.banos,
+      metros: data.metros,
+      whatsapp: data.whatsapp,
+      tipo: data.tipo,
+      status: data.status,
+      featured: data.featured,
+    })
+    .eq('id', listingId)
+    .eq('agent_id', agentId);
 
-    await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action: "update", sheetId, rowIndex, data: formattedData })
-    });
-    return true;
-  } catch (error) {
-    console.error('Error updating property:', error);
+  if (error) {
+    console.error('updateListing error:', error);
     return false;
   }
+
+  await supabase.from('listing_images').delete().eq('listing_id', listingId);
+  if (imageUrls.length > 0) {
+    await supabase.from('listing_images').insert(
+      imageUrls.map((url, i) => ({ listing_id: listingId, url, order_index: i }))
+    );
+  }
+
+  return true;
 }
 
-export async function deleteProperty(rowIndex: number, sheetId: string): Promise<boolean> {
-  if (!WEBHOOK_URL || !sheetId) return false;
-  try {
-    await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action: "delete", sheetId, rowIndex })
-    });
-    return true;
-  } catch (error) {
-    console.error('Error deleting property:', error);
+export async function deleteListing(listingId: string, agentId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('listings')
+    .delete()
+    .eq('id', listingId)
+    .eq('agent_id', agentId);
+
+  if (error) {
+    console.error('deleteListing error:', error);
     return false;
   }
+  return true;
+}
+
+export async function toggleListingStatus(
+  listingId: string,
+  agentId: string,
+  status: Property['status']
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('listings')
+    .update({ status })
+    .eq('id', listingId)
+    .eq('agent_id', agentId);
+
+  if (error) {
+    console.error('toggleListingStatus error:', error);
+    return false;
+  }
+  return true;
+}
+
+export async function uploadImage(userId: string, file: File): Promise<string | null> {
+  const path = `${userId}/${Date.now()}_${file.name}`;
+  const { error } = await supabase.storage.from('property-images').upload(path, file);
+  if (error) {
+    console.error('uploadImage error:', error);
+    return null;
+  }
+  const { data } = supabase.storage.from('property-images').getPublicUrl(path);
+  return data.publicUrl;
 }

@@ -1,19 +1,17 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UploadCloud, X, Loader2 } from 'lucide-react';
+import { UploadCloud, X, Loader2, Star } from 'lucide-react';
 import { Property } from '@/types';
-import { addProperty, updateProperty } from '@/lib/api';
-import { useUser } from '@clerk/clerk-react';
+import { addListing, updateListing, uploadImage } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
 interface PropertyFormProps {
   initialData?: Partial<Property>;
   isEditing?: boolean;
-  rowIndex?: number;
 }
 
-export default function PropertyForm({ initialData, isEditing, rowIndex }: PropertyFormProps) {
-  const { user } = useUser();
-  const sheetId = user?.publicMetadata?.sheetId as string;
+export default function PropertyForm({ initialData, isEditing }: PropertyFormProps) {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,34 +26,27 @@ export default function PropertyForm({ initialData, isEditing, rowIndex }: Prope
     metros: '',
     whatsapp: '',
     fotos: [],
-    activo: true,
+    status: 'publicado',
+    featured: false,
     tipo: 'venta',
     ...initialData,
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'number' ? value.toString() : value
-    }));
-  };
-
-  const handleToggleActive = () => {
-    setFormData(prev => ({ ...prev, activo: !prev.activo }));
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Submit triggered, passed validation");
-    
+    if (!user) return;
+
     try {
       setIsSubmitting(true);
-      
-      // Formatting data array corresponding to Google Sheet columns
-      // Columns: id, titulo, precio, ubicacion, descripcion, habitaciones, baños, metros, fotos, whatsapp, activo, tipo
-      const dataObj = {
-        id: formData.id || crypto.randomUUID(),
+
+      const payload = {
         titulo: formData.titulo || '',
         precio: formData.precio || '',
         ubicacion: formData.ubicacion || '',
@@ -63,26 +54,23 @@ export default function PropertyForm({ initialData, isEditing, rowIndex }: Prope
         habitaciones: formData.habitaciones || '',
         banos: formData.banos || '',
         metros: formData.metros || '',
-        fotos: formData.fotos?.join(',') || '',
         whatsapp: formData.whatsapp || '',
-        activo: formData.activo ? 'Activo' : 'Inactivo',
-        tipo: formData.tipo || 'venta'
-      };
+        tipo: formData.tipo || 'venta',
+        status: formData.status || 'publicado',
+        featured: formData.featured ?? false,
+      } as Omit<Property, 'id' | 'agent_id' | 'fotos'>;
 
-      console.log('Sending Property Data:', dataObj);
+      const imageUrls = formData.fotos || [];
 
       let success = false;
-      if (isEditing && rowIndex !== undefined) {
-        success = await updateProperty(rowIndex, dataObj, sheetId);
+      if (isEditing && initialData?.id) {
+        success = await updateListing(initialData.id, user.id, payload, imageUrls);
       } else {
-        success = await addProperty(dataObj, sheetId);
+        const id = await addListing(user.id, payload, imageUrls);
+        success = !!id;
       }
 
-      console.log('API completion success:', success);
-
       if (success) {
-        // Adding a slight delay before redirect to give Google Sheets a moment to execute
-        await new Promise(resolve => setTimeout(resolve, 1500));
         navigate('/dashboard');
       } else {
         alert('Error guardando la propiedad. Por favor, intenta de nuevo.');
@@ -95,84 +83,70 @@ export default function PropertyForm({ initialData, isEditing, rowIndex }: Prope
     }
   };
 
-  const uploadImagesToCloudinary = async (files: File[]) => {
+  const uploadImages = async (files: File[]) => {
+    if (!user) return;
     setIsUploading(true);
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-
-    if (!cloudName || !uploadPreset) {
-      alert("Missing Cloudinary configuration in .env");
-      setIsUploading(false);
-      return;
+    const urls: string[] = [];
+    for (const file of files) {
+      const url = await uploadImage(user.id, file);
+      if (url) urls.push(url);
     }
-
-    const uploadPromises = files.map(file => {
-      const data = new FormData();
-      data.append('file', file);
-      data.append('upload_preset', uploadPreset);
-
-      return fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: data,
-      }).then(res => res.json());
-    });
-
-    try {
-      const results = await Promise.all(uploadPromises);
-      const urls = results.map(result => result.secure_url).filter(Boolean);
-      setFormData(prev => ({
-        ...prev,
-        fotos: [...(prev.fotos || []), ...urls]
-      }));
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      alert('Error subiendo imágenes al servidor');
-    } finally {
-      setIsUploading(false);
+    if (urls.length > 0) {
+      setFormData(prev => ({ ...prev, fotos: [...(prev.fotos || []), ...urls] }));
+    } else {
+      alert('Error subiendo imágenes');
     }
+    setIsUploading(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const files = (Array.from(e.dataTransfer.files) as File[]).filter(file => file.type.startsWith('image/'));
-    if (files.length > 0) {
-      uploadImagesToCloudinary(files);
-    }
+    const files = (Array.from(e.dataTransfer.files) as File[]).filter(f => f.type.startsWith('image/'));
+    if (files.length > 0) uploadImages(files);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const files = (Array.from(e.target.files) as File[]).filter(file => file.type.startsWith('image/'));
-      if (files.length > 0) {
-        uploadImagesToCloudinary(files);
-      }
+      const files = (Array.from(e.target.files) as File[]).filter(f => f.type.startsWith('image/'));
+      if (files.length > 0) uploadImages(files);
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-brand-primary">
           {isEditing ? 'Editar Propiedad' : 'Agregar Propiedad'}
         </h1>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-500">Estado:</span>
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* Featured toggle */}
           <button
             type="button"
-            onClick={handleToggleActive}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-              formData.activo ? 'bg-brand-accent' : 'bg-gray-300'
+            onClick={() => setFormData(prev => ({ ...prev, featured: !prev.featured }))}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors cursor-pointer ${
+              formData.featured
+                ? 'bg-yellow-50 border-yellow-300 text-yellow-700'
+                : 'bg-gray-50 border-gray-200 text-gray-500'
             }`}
           >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                formData.activo ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
+            <Star size={14} className={formData.featured ? 'fill-yellow-400 text-yellow-400' : ''} />
+            Destacada
           </button>
-          <span className="text-sm font-medium">
-            {formData.activo ? 'Activo' : 'Inactivo'}
-          </span>
+
+          {/* Status dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Estado:</span>
+            <select
+              name="status"
+              value={formData.status}
+              onChange={handleChange}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-brand-accent"
+            >
+              <option value="publicado">Publicado</option>
+              <option value="borrador">Borrador</option>
+              <option value="archivado">Archivado</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -291,27 +265,27 @@ export default function PropertyForm({ initialData, isEditing, rowIndex }: Prope
 
       <div className="bg-brand-white rounded-xl shadow-sm p-6 space-y-4 border border-gray-100">
         <h2 className="text-lg font-medium text-gray-900">Fotos</h2>
-        
-        <input 
-          type="file" 
-          multiple 
-          accept="image/*" 
-          ref={fileInputRef} 
-          onChange={handleFileChange} 
-          className="hidden" 
+
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
         />
 
-        <div 
+        <div
           className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors cursor-pointer"
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
         >
           {isUploading ? (
-             <div className="flex flex-col items-center justify-center">
-               <Loader2 className="animate-spin text-brand-accent h-12 w-12 mb-4" />
-               <p className="text-gray-600 font-medium">Subiendo imágenes...</p>
-             </div>
+            <div className="flex flex-col items-center justify-center">
+              <Loader2 className="animate-spin text-brand-accent h-12 w-12 mb-4" />
+              <p className="text-gray-600 font-medium">Subiendo imágenes...</p>
+            </div>
           ) : (
             <>
               <UploadCloud className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -324,22 +298,24 @@ export default function PropertyForm({ initialData, isEditing, rowIndex }: Prope
         {formData.fotos && formData.fotos.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-6">
             {formData.fotos.map((photo, index) => (
-              <div key={index} className="relative group aspect-square rounded-lg overflow-hidden bg-gray-100">
-                <img 
-                  src={photo} 
-                  alt={`Preview ${index}`} 
+              <div
+                key={index}
+                className="relative group aspect-square rounded-lg overflow-hidden bg-gray-100"
+              >
+                <img
+                  src={photo}
+                  alt={`Preview ${index}`}
                   className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
                 />
                 <button
                   type="button"
                   className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                  onClick={() => {
+                  onClick={() =>
                     setFormData(prev => ({
                       ...prev,
-                      fotos: prev.fotos?.filter((_, i) => i !== index)
+                      fotos: prev.fotos?.filter((_, i) => i !== index),
                     }))
-                  }}
+                  }
                 >
                   <X size={16} />
                 </button>

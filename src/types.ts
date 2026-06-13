@@ -9,6 +9,8 @@ export interface Property {
   metros: string;
   fotos: string[];
   whatsapp: string;
-  activo: boolean;
+  status: 'publicado' | 'borrador' | 'archivado';
+  featured: boolean;
   tipo: 'venta' | 'alquiler';
+  agent_id?: string;
 }

@@ -1,67 +1,86 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Edit2, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Edit2, Trash2, Image as ImageIcon, Star } from 'lucide-react';
 import { Property } from '@/types';
-import { fetchListings, updateProperty, deleteProperty } from '@/lib/api';
-import { useUser } from '@clerk/clerk-react';
+import { fetchListings, deleteListing, toggleListingStatus } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+
+const STATUS_LABELS: Record<Property['status'], string> = {
+  publicado: 'Publicado',
+  borrador: 'Borrador',
+  archivado: 'Archivado',
+};
+
+const STATUS_COLORS: Record<Property['status'], string> = {
+  publicado: 'bg-green-100 text-green-700',
+  borrador: 'bg-yellow-100 text-yellow-700',
+  archivado: 'bg-gray-100 text-gray-500',
+};
 
 export default function Dashboard() {
   const [properties, setProperties] = useState<Property[]>([]);
-  const { user } = useUser();
-  const sheetId = user?.publicMetadata?.sheetId as string;
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   const loadProperties = async () => {
-    if (sheetId) {
-      const data = await fetchListings(sheetId);
-      setProperties(data);
-    }
+    if (!user) return;
+    setLoading(true);
+    const data = await fetchListings(user.id);
+    setProperties(data);
+    setLoading(false);
   };
 
   useEffect(() => {
     loadProperties();
-  }, [sheetId]);
+  }, [user]);
 
-  const toggleStatus = async (id: string, index: number) => {
-    const property = properties.find(p => p.id === id);
-    if (!property) return;
-    
-    const newStatus = !property.activo;
-    
-    // Optimistic update
-    setProperties(properties.map(p => 
-      p.id === id ? { ...p, activo: newStatus } : p
-    ));
-
-    const success = await updateProperty(index + 2, { activo: newStatus }, sheetId);
-    if (!success) {
-      // Revert if failed
-      setProperties(properties.map(p => 
-        p.id === id ? { ...p, activo: !newStatus } : p
-      ));
-    }
+  const handleStatusChange = async (id: string, status: Property['status']) => {
+    if (!user) return;
+    setProperties(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+    await toggleListingStatus(id, user.id, status);
   };
 
-  const handleDelete = async (id: string, index: number) => {
+  const handleDelete = async (id: string) => {
+    if (!user) return;
     if (!window.confirm('¿Estás seguro de que deseas eliminar esta propiedad?')) return;
-
-    const success = await deleteProperty(index + 2, sheetId);
+    const success = await deleteListing(id, user.id);
     if (success) {
-      setProperties(properties.filter(p => p.id !== id));
+      setProperties(prev => prev.filter(p => p.id !== id));
     } else {
       alert('Error eliminando propiedad');
     }
   };
 
+  const total = properties.length;
+  const publicados = properties.filter(p => p.status === 'publicado').length;
+  const borradores = properties.filter(p => p.status === 'borrador').length;
+  const archivados = properties.filter(p => p.status === 'archivado').length;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold text-brand-primary">Mis Propiedades</h1>
-        <Link 
-          to="/agregar" 
+        <Link
+          to="/agregar"
           className="bg-brand-accent hover:bg-brand-accent-hover text-brand-white px-4 py-2 rounded-lg font-medium transition-colors"
         >
           Agregar Propiedad
         </Link>
+      </div>
+
+      {/* Stats bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          { label: 'Total', value: total, color: 'bg-blue-50 text-blue-700' },
+          { label: 'Publicados', value: publicados, color: 'bg-green-50 text-green-700' },
+          { label: 'Borradores', value: borradores, color: 'bg-yellow-50 text-yellow-700' },
+          { label: 'Archivados', value: archivados, color: 'bg-gray-50 text-gray-500' },
+        ].map(stat => (
+          <div key={stat.label} className={`rounded-xl px-5 py-4 ${stat.color} flex flex-col gap-1`}>
+            <span className="text-2xl font-bold">{stat.value}</span>
+            <span className="text-sm font-medium">{stat.label}</span>
+          </div>
+        ))}
       </div>
 
       <div className="bg-brand-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
@@ -78,68 +97,78 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {properties.map((property, index) => (
-                <tr key={property.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="p-4">
-                    {property.fotos && property.fotos.length > 0 ? (
-                      <img 
-                        src={property.fotos[0]} 
-                        alt={property.titulo} 
-                        className="w-16 h-16 object-cover rounded-lg"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
-                        <ImageIcon size={24} />
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-4 font-medium text-brand-primary">{property.titulo}</td>
-                  <td className="p-4 text-gray-600">
-                    ${Number(property.precio || 0).toLocaleString()}
-                  </td>
-                  <td className="p-4 text-gray-600">{property.ubicacion}</td>
-                  <td className="p-4">
-                    <button
-                      onClick={() => toggleStatus(property.id, index)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                        property.activo ? 'bg-brand-accent' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          property.activo ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </td>
-                  <td className="p-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Link
-                        to={`/editar/${property.id}`}
-                        state={{ rowIndex: index + 2 }}
-                        className="p-2 text-gray-400 hover:text-brand-accent transition-colors"
-                        title="Editar"
-                      >
-                        <Edit2 size={18} />
-                      </Link>
-                      <button
-                        onClick={() => handleDelete(property.id, index)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
-                        title="Eliminar"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </td>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-gray-400">Cargando...</td>
                 </tr>
-              ))}
-              {properties.length === 0 && (
+              ) : properties.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-gray-500">
                     No tienes propiedades publicadas.
                   </td>
                 </tr>
+              ) : (
+                properties.map((property) => (
+                  <tr key={property.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="p-4">
+                      {property.fotos && property.fotos.length > 0 ? (
+                        <img
+                          src={property.fotos[0]}
+                          alt={property.titulo}
+                          className="w-16 h-16 object-cover rounded-lg"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
+                          <ImageIcon size={24} />
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-brand-primary">{property.titulo}</span>
+                        {property.featured && (
+                          <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 capitalize">{property.tipo}</span>
+                    </td>
+                    <td className="p-4 text-gray-600">
+                      ${Number(property.precio || 0).toLocaleString()}
+                    </td>
+                    <td className="p-4 text-gray-600">{property.ubicacion}</td>
+                    <td className="p-4">
+                      <select
+                        value={property.status}
+                        onChange={(e) =>
+                          handleStatusChange(property.id, e.target.value as Property['status'])
+                        }
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 outline-none cursor-pointer ${STATUS_COLORS[property.status]}`}
+                      >
+                        {(Object.keys(STATUS_LABELS) as Property['status'][]).map(s => (
+                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="p-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          to={`/editar/${property.id}`}
+                          className="p-2 text-gray-400 hover:text-brand-accent transition-colors"
+                          title="Editar"
+                        >
+                          <Edit2 size={18} />
+                        </Link>
+                        <button
+                          onClick={() => handleDelete(property.id)}
+                          className="p-2 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+                          title="Eliminar"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

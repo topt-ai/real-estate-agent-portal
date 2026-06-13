@@ -1,34 +1,29 @@
 import { useState, useEffect } from 'react';
-import { useParams, useLocation } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import PropertyForm from '@/components/PropertyForm';
 import { fetchListings } from '@/lib/api';
 import { Property } from '@/types';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth } from '@/lib/auth';
 import { Loader2 } from 'lucide-react';
 
 export default function EditProperty() {
   const { id } = useParams();
-  const location = useLocation();
-  const rowIndex = location.state?.rowIndex;
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
-  const { user } = useUser();
-  const sheetId = user?.publicMetadata?.sheetId as string;
+  const { user } = useAuth();
 
   useEffect(() => {
     const loadData = async () => {
-      if (sheetId && id) {
+      if (user && id) {
         setLoading(true);
-        const data = await fetchListings(sheetId);
+        const data = await fetchListings(user.id);
         const found = data.find(p => p.id === id);
-        if (found) {
-          setProperty(found);
-        }
+        setProperty(found ?? null);
         setLoading(false);
       }
     };
     loadData();
-  }, [sheetId, id]);
+  }, [user, id]);
 
   if (loading) {
     return (
@@ -46,5 +41,5 @@ export default function EditProperty() {
     );
   }
 
-  return <PropertyForm initialData={property} isEditing rowIndex={rowIndex} />;
+  return <PropertyForm initialData={property} isEditing />;
 }
