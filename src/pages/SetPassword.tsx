@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { translateAuthError } from '@/lib/authErrors';
+import { BRAND_CONFIG } from '@/config';
 
 type Phase = 'checking' | 'ready' | 'invalid' | 'success';
 
@@ -143,7 +144,7 @@ export default function SetPassword() {
     <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-8 space-y-6">
         <div className="text-center space-y-1">
-          <h1 className="text-3xl font-bold text-brand-primary tracking-tight">TuWebSV</h1>
+          <h1 className="text-3xl font-bold text-brand-primary tracking-tight">{BRAND_CONFIG.name}</h1>
           <p className="text-gray-500 text-sm">Crea tu contraseña</p>
         </div>
 

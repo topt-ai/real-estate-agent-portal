@@ -4,6 +4,7 @@ import { ArrowLeft, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { translateAuthError } from '@/lib/authErrors';
+import { AGENT_CONFIG, BRAND_CONFIG } from '@/config';
 
 type View = 'login' | 'forgot';
 
@@ -78,7 +79,7 @@ export default function Login() {
     const redirectTo =
       window.location.hostname === 'localhost'
         ? `${window.location.origin}/set-password`
-        : 'https://portal.tuwebsv.com/set-password';
+        : `${AGENT_CONFIG.portal}/set-password`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     setResetting(false);
     if (error) {
@@ -92,7 +93,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-8 space-y-6">
         <div className="text-center space-y-1">
-          <h1 className="text-3xl font-bold text-brand-primary tracking-tight">TuWebSV</h1>
+          <h1 className="text-3xl font-bold text-brand-primary tracking-tight">{BRAND_CONFIG.name}</h1>
           <p className="text-gray-500 text-sm">
             {view === 'forgot' ? 'Restablecer contraseña' : 'Portal de Agentes Inmobiliarios'}
           </p>
@@ -217,12 +218,12 @@ export default function Login() {
         <p className="text-xs text-center text-gray-500 pt-2 border-t border-gray-100">
           ¿No tienes acceso?{' '}
           <a
-            href="https://tuwebsv.com"
+            href={BRAND_CONFIG.supportUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-brand-accent hover:underline font-medium"
           >
-            Contacta a TuWebSV
+            Contacta a {BRAND_CONFIG.name}
           </a>
         </p>
       </div>

@@ -4,13 +4,14 @@ import { UploadCloud, X, Loader2, Star } from 'lucide-react';
 import { Property } from '@/types';
 import { addListing, updateListing, uploadImage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { STORAGE_KEYS } from '@/config';
 
 interface PropertyFormProps {
   initialData?: Partial<Property>;
   isEditing?: boolean;
 }
 
-const DRAFT_KEY = 'tuwebsv-property-draft';
+const DRAFT_KEY = STORAGE_KEYS.propertyDraft;
 const AUTOSAVE_INTERVAL_MS = 30_000;
 
 const PROPERTY_TYPE_OPTIONS: { value: NonNullable<Property['property_type']>; label: string }[] = [

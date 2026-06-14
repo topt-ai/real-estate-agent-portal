@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { Home, PlusSquare, Menu, X, LogOut, Globe, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
+import { AGENT_CONFIG, BRAND_CONFIG } from '@/config';
 
 export default function Layout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -18,13 +19,13 @@ export default function Layout() {
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
   const websiteUrl =
     (user?.user_metadata?.website_url as string | undefined) ||
-    'https://jarvisrealty.tuwebsv.com';
+    AGENT_CONFIG.website;
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-brand-bg">
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-brand-primary text-brand-white">
-        <div className="font-bold text-xl">TuWebSV</div>
+        <div className="font-bold text-xl">{BRAND_CONFIG.name}</div>
         <div className="flex flex-row items-center gap-4">
           <button
             onClick={() => signOut()}
@@ -47,7 +48,7 @@ export default function Layout() {
         )}
       >
         <div className="p-6 hidden md:block">
-          <div className="font-bold text-2xl tracking-tight text-brand-accent">TuWebSV</div>
+          <div className="font-bold text-2xl tracking-tight text-brand-accent">{BRAND_CONFIG.name}</div>
         </div>
 
         <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">

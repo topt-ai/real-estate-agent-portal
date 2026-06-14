@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { STORAGE_KEYS } from '../config';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -9,6 +10,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storage: window.localStorage,
-    storageKey: 'tuwebsv-auth',
+    storageKey: STORAGE_KEYS.auth,
   },
 });

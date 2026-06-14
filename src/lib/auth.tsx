@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { STORAGE_KEYS } from '../config';
 
 interface AuthContextType {
   session: Session | null;
@@ -16,7 +17,7 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
-const DRAFT_KEYS = ['tuwebsv-property-draft'];
+const DRAFT_KEYS = [STORAGE_KEYS.propertyDraft];
 
 function clearLocalDrafts() {
   for (const k of DRAFT_KEYS) {
